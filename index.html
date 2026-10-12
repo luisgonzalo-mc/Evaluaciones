@@ -124,7 +124,54 @@ function chooseQuestion(cat){const available=QS[cat].map((q,i)=>({q,i,id:cat+'-'
 $('spinBtn').onclick=()=>{if(spinning||answered)return;audio();spinning=true;$('spinBtn').disabled=true;sfx('spin');const chosen=Math.floor(Math.random()*CATS.length),arc=2*Math.PI/CATS.length;const desired=((-(chosen*arc+arc/2))%(Math.PI*2)+Math.PI*2)%(Math.PI*2);const start=spinAngle,extra=Math.PI*2*(5+Math.floor(Math.random()*3)),delta=extra+((desired-start%(Math.PI*2)+Math.PI*2)%(Math.PI*2)),begin=performance.now(),duration=3600;function frame(now){const t=Math.min(1,(now-begin)/duration),ease=1-Math.pow(1-t,4);spinAngle=start+delta*ease;drawWheel(spinAngle);if(t<1)requestAnimationFrame(frame);else{spinAngle=spinAngle%(Math.PI*2);drawWheel(spinAngle);spinning=false;current={cat:chosen,q:chooseQuestion(chosen)};renderQuestion();}}requestAnimationFrame(frame)};
 function renderQuestion(){const cat=CATS[current.cat],q=current.q;$('questionArea').innerHTML='<div class="category" style="color:'+cat.color+'">'+cat.name+'</div><h3 class="question">'+q.q+'</h3><p class="tiny">Elige una sola respuesta antes de que termine el tiempo.</p>';$('answers').innerHTML='';q.a.forEach((a,i)=>{const b=document.createElement('button');b.className='answer';b.textContent=String.fromCharCode(65+i)+') '+a;b.onclick=()=>answer(i,b);$('answers').appendChild(b)});$('feedback').textContent='';startQuestionTimer();}
 function answer(i,btn,timedOut=false){if(answered)return;answered=true;stopQuestionTimer();const q=current.q,buttons=[...$('answers').querySelectorAll('button')];buttons.forEach((b,j)=>{b.disabled=true;if(j===q.c)b.classList.add('correct')});if(i===q.c){score+=3;correct++;streak++;if(btn)btn.classList.add('correct');$('feedback').innerHTML='✅ <strong>¡Correcto! +3 puntos.</strong> '+q.e;sfx('correct')}else{streak=0;if(btn)btn.classList.add('wrong');$('feedback').innerHTML=(timedOut?'⏰ <strong>¡Se acabó el tiempo!</strong> ':'💡 <strong>¡Sigue aprendiendo!</strong> ')+q.e;sfx('wrong')}round++;updateStats();$('progress').style.width=(round/15*100)+'%';$('nextBtn').classList.remove('hidden');$('nextBtn').textContent=round>=15?'Ver resultado 🏆':'Siguiente pregunta ➜';$('spinBtn').disabled=true}
-$('nextBtn').onclick=()=>{if(round>=15){finishGame();return}resetRound()};function finishGame(){stopQuestionTimer();const rec={name:student.name,course:student.course,score,correct,total:15,date:new Date().toLocaleString('es-BO'),timestamp:Date.now()};saveRecord(rec);$('resultSummary').textContent=student.name+' · '+student.course+' — ¡Buen trabajo!';$('finalScore').textContent=score;$('finalCorrect').textContent=correct+'/15';$('progress').style.width='100%';show('resultScreen');sfx('win')}$('finishBtn').onclick=()=>{student=null;stopMusic();show('registerScreen');$('registerForm').reset()};
+$('nextBtn').onclick=()=>{if(round>=15){finishGame();return}resetRound()};
+async function finishGame() {
+  stopQuestionTimer();
+
+  if (student.finishing) return;
+  student.finishing = true;
+
+  const rec = {
+    name: student.name,
+    course: student.course,
+    score: score,
+    correct: correct,
+    total: 15,
+    date: new Date().toLocaleString('es-BO'),
+    timestamp: Date.now()
+  };
+
+  try {
+    await llamarSupabase({
+      action: 'finish',
+      attempt_id: student.attemptId,
+      score: score,
+      correct: correct
+    });
+
+    saveRecord(rec);
+
+    $('resultSummary').textContent =
+      student.name + ' · ' + student.course + ' — ¡Buen trabajo!';
+
+    $('finalScore').textContent = score;
+    $('finalCorrect').textContent = correct + '/15';
+    $('progress').style.width = '100%';
+
+    show('resultScreen');
+    sfx('win');
+
+  } catch (err) {
+    student.finishing = false;
+
+    alert(
+      'No se pudo guardar la calificación en Supabase: ' +
+      (err.message || 'Error de conexión') +
+      '. Puedes volver a intentarlo.'
+    );
+  }
+}
+$('finishBtn').onclick=()=>{student=null;stopMusic();show('registerScreen');$('registerForm').reset()};
 $('teacherEntry').onclick=()=>{show('teacherScreen');$('teacherLogin').classList.remove('hidden');$('teacherData').classList.add('hidden');$('teacherCode').value=''};$('backBtn').onclick=()=>show(student?'gameScreen':'registerScreen');$('teacherForm').addEventListener('submit',e=>{e.preventDefault();if($('teacherCode').value!=='12357911'){alert('Código incorrecto.');sfx('wrong');return}$('teacherLogin').classList.add('hidden');$('teacherData').classList.remove('hidden');renderTeacher();sfx('correct')});
 function renderTeacher(){const rs=getRecords().sort((a,b)=>b.timestamp-a.timestamp);$('totalStudents').textContent=rs.length;$('averageScore').textContent=rs.length?Math.round(rs.reduce((s,r)=>s+r.score,0)/rs.length):0;$('bestScore').textContent=rs.length?Math.max(...rs.map(r=>r.score)):0;$('recordsBody').innerHTML='';if(!rs.length){$('recordsBody').innerHTML='<tr><td colspan="6" class="empty">Todavía no hay participaciones registradas en este navegador.</td></tr>';return}rs.forEach((r,i)=>{const tr=document.createElement('tr');[i+1,r.name,r.course,r.score,r.correct+'/15',r.date].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td)});$('recordsBody').appendChild(tr)})}
 $('exportBtn').onclick=()=>{const rs=getRecords();const rows=[['N°','Estudiante','Curso','Puntaje sobre 45','Correctas de 15','Fecha'],...rs.map((r,i)=>[i+1,r.name,r.course,r.score,r.correct+'/15',r.date])];const csv='\ufeff'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='puntajes_ruleta_energia.csv';a.click();URL.revokeObjectURL(url)};$('clearBtn').onclick=()=>{if(confirm('¿Seguro que deseas borrar todos los registros guardados en este navegador? Esta acción no se puede deshacer.')){localStorage.removeItem(storageKey);localStorage.removeItem(participationKey);renderTeacher()}};

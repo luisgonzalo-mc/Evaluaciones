@@ -17,6 +17,35 @@
 </main><div class="footer">Recurso didáctico de Física · Energía mecánica · Uso educativo</div></div>
 <script>
 (()=>{'use strict';
+ // CONEXIÓN CON SUPABASE
+const SUPABASE_URL = "https://igxphsugezbgwhlrakjt.supabase.co";
+const SUPABASE_KEY = "sb_publishable_xaoh-hL6vhap-PZeiBk_jQ_aM6OOgOj";
+
+const SUPABASE_FUNCTION =
+  SUPABASE_URL.replace(/\/$/, "") +
+  "/functions/v1/clever-handler";
+
+async function llamarSupabase(datos) {
+  const respuesta = await fetch(SUPABASE_FUNCTION, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_KEY,
+      "Authorization": "Bearer " + SUPABASE_KEY
+    },
+    body: JSON.stringify(datos)
+  });
+
+  const resultado = await respuesta.json();
+
+  if (!respuesta.ok || !resultado.ok) {
+    throw new Error(
+      resultado.message || "No se pudo conectar con Supabase."
+    );
+  }
+
+  return resultado;
+}     
 const CATS=[{name:'Energía cinética',short:'CINÉTICA',color:'#35d7e8'},{name:'Potencial gravitacional',short:'GRAVITACIONAL',color:'#ff5c98'},{name:'Potencial elástica',short:'ELÁSTICA',color:'#ffd84d'},{name:'Energía mecánica',short:'MECÁNICA',color:'#a68aff'},{name:'Conservación',short:'CONSERVACIÓN',color:'#70e3a1'}];
 const QS=[
 [{q:'¿Qué expresión permite calcular la energía cinética de un cuerpo?',a:['Ec = m·g·h','Ec = ½·m·v²','Ec = k·x²'],c:1,e:'La energía cinética depende de la masa y del cuadrado de la rapidez: Ec = ½mv².'},{q:'Si la rapidez de un objeto se duplica y su masa no cambia, su energía cinética…',a:['Se duplica','Se cuadruplica','Se reduce a la mitad'],c:1,e:'Como la rapidez está al cuadrado, (2v)² = 4v².'},{q:'¿En qué unidad del SI se mide la energía cinética?',a:['Newton (N)','Watt (W)','Joule (J)'],c:2,e:'La unidad de energía en el SI es el joule (J).'}, {q:'Un objeto de 2 kg se mueve a 3 m/s. ¿Cuál es su energía cinética?',a:['9 J','6 J','18 J'],c:0,e:'Ec = ½·2·3² = 9 J.'},{q:'Una pelota de 4 kg se mueve a 2 m/s. Calcula su energía cinética.',a:['8 J','16 J','4 J'],c:0,e:'Ec = ½·m·v² = ½·4·2² = 8 J.'}],
@@ -34,7 +63,59 @@ function tone(freq,dur=.12,type='sine',vol=.07,delay=0){if(!soundOn)return;const
 function startMusic(){stopMusic();if(!musicOn)return;const melody=[392,494,587,494,440,523,659,523,392,494,587,784,659,587,494,440];let i=0;musicTimer=setInterval(()=>{if(musicOn&&soundOn)tone(melody[i++%melody.length],.22,'sine',.012);},330)}function stopMusic(){if(musicTimer)clearInterval(musicTimer);musicTimer=null}
 $('musicBtn').onclick=()=>{musicOn=!musicOn;$('musicBtn').textContent='♫ Música: '+(musicOn?'activada':'apagada');if(musicOn)startMusic();else stopMusic()};$('soundBtn').onclick=()=>{soundOn=!soundOn;$('soundBtn').textContent=(soundOn?'🔊 Sonidos: activados':'🔇 Sonidos: apagados');if(soundOn&&musicOn)startMusic()};
 const canvas=$('wheel'),ctx=canvas.getContext('2d');function drawWheel(angle=0){const n=CATS.length,r=canvas.width/2,arc=2*Math.PI/n;ctx.clearRect(0,0,700,700);ctx.save();ctx.translate(r,r);ctx.rotate(angle);for(let i=0;i<n;i++){const a0=-Math.PI/2+i*arc,a1=a0+arc;ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,r-13,a0,a1);ctx.closePath();ctx.fillStyle=CATS[i].color;ctx.fill();ctx.lineWidth=7;ctx.strokeStyle='#fff';ctx.stroke();ctx.save();ctx.rotate(a0+arc/2);ctx.textAlign='right';ctx.fillStyle='#17213d';ctx.font='900 25px system-ui';const words=CATS[i].short.split(' ');if(words.length>1){ctx.fillText(words[0],r-45,-4);ctx.fillText(words.slice(1).join(' '),r-45,25)}else ctx.fillText(words[0],r-45,9);ctx.restore()}ctx.beginPath();ctx.arc(0,0,64,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=8;ctx.strokeStyle='#29375d';ctx.stroke();ctx.restore()}drawWheel();
-$('registerForm').addEventListener('submit',e=>{e.preventDefault();const name=$('studentName').value.trim(),course=$('course').value;if(name.length<3||!course)return;const p=getParticipants();if(p[normalize(name)]){alert('Este nombre ya tiene una participación registrada en este navegador. Si crees que es un error, consulta al docente.');return}student={name,course};score=0;correct=0;streak=0;round=0;usedQuestionIds=new Set();$('studentBadge').textContent=name+' · '+course;updateStats();show('gameScreen');startMusic();sfx('click');resetRound()});
+
+$('registerForm').addEventListener('submit', async e => {
+  e.preventDefault();
+
+  const name = $('studentName').value.trim();
+  const course = $('course').value;
+
+  if (name.length < 3 || !course) return;
+
+  const submitButton = $('registerForm').querySelector(
+    'button[type="submit"]'
+  );
+
+  if (submitButton) submitButton.disabled = true;
+
+  try {
+    const result = await llamarSupabase({
+      action: 'register',
+      name: name,
+      course: course
+    });
+
+    student = {
+      name: result.name,
+      course: course,
+      studentId: result.student_id,
+      attemptId: result.attempt_id
+    };
+
+    score = 0;
+    correct = 0;
+    streak = 0;
+    round = 0;
+    usedQuestionIds = new Set();
+
+    $('studentBadge').textContent = name + ' · ' + course;
+
+    updateStats();
+    show('gameScreen');
+    startMusic();
+    sfx('click');
+    resetRound();
+
+  } catch (err) {
+    alert(
+      err.message ||
+      'No se pudo registrar. Revisa tu conexión a internet.'
+    );
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+});
+
 function updateStats(){$('score').textContent=score;$('round').textContent=Math.min(round+1,15)+'/15';$('streak').textContent=streak+' 🔥';$('progress').style.width=(round/15*100)+'%'}
 function stopQuestionTimer(){if(timerInterval){clearInterval(timerInterval);timerInterval=null}}
 function startQuestionTimer(){stopQuestionTimer();timeLeft=15;$('timerText').textContent=timeLeft+' s';$('timerFill').style.width='100%';$('timerFill').classList.remove('urgent');timerInterval=setInterval(()=>{if(answered){stopQuestionTimer();return}timeLeft--;$('timerText').textContent=timeLeft+' s';$('timerFill').style.width=(timeLeft/15*100)+'%';if(timeLeft<=5)$('timerFill').classList.add('urgent');if(timeLeft<=0){stopQuestionTimer();answer(-1,null,true)}},1000)}

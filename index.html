@@ -172,8 +172,110 @@ async function finishGame() {
   }
 }
 $('finishBtn').onclick=()=>{student=null;stopMusic();show('registerScreen');$('registerForm').reset()};
-$('teacherEntry').onclick=()=>{show('teacherScreen');$('teacherLogin').classList.remove('hidden');$('teacherData').classList.add('hidden');$('teacherCode').value=''};$('backBtn').onclick=()=>show(student?'gameScreen':'registerScreen');$('teacherForm').addEventListener('submit',e=>{e.preventDefault();if($('teacherCode').value!=='12357911'){alert('Código incorrecto.');sfx('wrong');return}$('teacherLogin').classList.add('hidden');$('teacherData').classList.remove('hidden');renderTeacher();sfx('correct')});
-function renderTeacher(){const rs=getRecords().sort((a,b)=>b.timestamp-a.timestamp);$('totalStudents').textContent=rs.length;$('averageScore').textContent=rs.length?Math.round(rs.reduce((s,r)=>s+r.score,0)/rs.length):0;$('bestScore').textContent=rs.length?Math.max(...rs.map(r=>r.score)):0;$('recordsBody').innerHTML='';if(!rs.length){$('recordsBody').innerHTML='<tr><td colspan="6" class="empty">Todavía no hay participaciones registradas en este navegador.</td></tr>';return}rs.forEach((r,i)=>{const tr=document.createElement('tr');[i+1,r.name,r.course,r.score,r.correct+'/15',r.date].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td)});$('recordsBody').appendChild(tr)})}
+$('teacherEntry').onclick=()=>{show('teacherScreen');$('teacherLogin').classList.remove('hidden');$('teacherData').classList.add('hidden');$('teacherCode').value=''};$('backBtn').onclick=()=>show(student?'gameScreen':'registerScreen');
+let teacherRecords = [];
+
+$('teacherForm').addEventListener('submit', async e => {
+  e.preventDefault();
+
+  const code = $('teacherCode').value;
+  const submitButton = $('teacherForm').querySelector(
+    'button[type="submit"]'
+  );
+
+  if (submitButton) submitButton.disabled = true;
+
+  try {
+    const data = await llamarSupabase({
+      action: 'teacherResults',
+      teacher_code: code
+    });
+
+    teacherRecords = data.results.map(r => {
+      const attempt = Array.isArray(r.intentos)
+        ? r.intentos[0]
+        : r.intentos;
+
+      const studentData = attempt
+        ? (Array.isArray(attempt.estudiantes)
+            ? attempt.estudiantes[0]
+            : attempt.estudiantes)
+        : null;
+
+      return {
+        name: studentData?.nombre || 'Sin nombre',
+        course: studentData?.curso || 'Sin curso',
+        score: r.puntaje,
+        correct: r.aciertos,
+        date: r.registrado_en
+          ? new Date(r.registrado_en).toLocaleString('es-BO')
+          : ''
+      };
+    });
+
+    $('teacherLogin').classList.add('hidden');
+    $('teacherData').classList.remove('hidden');
+
+    renderTeacher();
+    sfx('correct');
+
+  } catch (err) {
+    alert(
+      err.message ||
+      'No se pudieron consultar las calificaciones.'
+    );
+    sfx('wrong');
+
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+});
+
+function renderTeacher() {
+  const rs = [...teacherRecords];
+
+  $('totalStudents').textContent = rs.length;
+
+  $('averageScore').textContent = rs.length
+    ? Math.round(
+        rs.reduce((sum, r) => sum + r.score, 0) / rs.length
+      )
+    : 0;
+
+  $('bestScore').textContent = rs.length
+    ? Math.max(...rs.map(r => r.score))
+    : 0;
+
+  $('recordsBody').innerHTML = '';
+
+  if (!rs.length) {
+    $('recordsBody').innerHTML =
+      '<tr><td colspan="6" class="empty">' +
+      'Todavía no hay calificaciones registradas.' +
+      '</td></tr>';
+    return;
+  }
+
+  rs.forEach((r, i) => {
+    const tr = document.createElement('tr');
+
+    [
+      i + 1,
+      r.name,
+      r.course,
+      r.score,
+      r.correct + '/15',
+      r.date
+    ].forEach(value => {
+      const td = document.createElement('td');
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+
+    $('recordsBody').appendChild(tr);
+  });
+}
+
 $('exportBtn').onclick=()=>{const rs=getRecords();const rows=[['N°','Estudiante','Curso','Puntaje sobre 45','Correctas de 15','Fecha'],...rs.map((r,i)=>[i+1,r.name,r.course,r.score,r.correct+'/15',r.date])];const csv='\ufeff'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='puntajes_ruleta_energia.csv';a.click();URL.revokeObjectURL(url)};$('clearBtn').onclick=()=>{if(confirm('¿Seguro que deseas borrar todos los registros guardados en este navegador? Esta acción no se puede deshacer.')){localStorage.removeItem(storageKey);localStorage.removeItem(participationKey);renderTeacher()}};
 startMusic();
 })();
